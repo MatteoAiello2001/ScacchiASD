@@ -1,0 +1,13 @@
+<header>
+  <div class="contenuto">
+    <span class="logo" aria-hidden="true">♞</span>
+    <h1>ScacchiASD</h1>
+    @if (ambiente !== 'production') {
+      <span class="ambiente">{{ ambiente }}</span>
+    }
+  </div>
+</header>
+
+<main class="contenuto">
+  <router-outlet />
+</main>

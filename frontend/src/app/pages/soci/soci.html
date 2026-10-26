@@ -1,0 +1,39 @@
+<section class="card">
+  <h2>Nuovo socio</h2>
+  <form (ngSubmit)="aggiungiSocio()">
+    <label for="nome">Nome</label>
+    <div class="riga">
+      <input
+        id="nome"
+        type="text"
+        name="nome"
+        placeholder="Es. Mario Rossi"
+        autocomplete="off"
+        [maxlength]="nomeMaxLength"
+        [(ngModel)]="nuovoNome"
+      />
+      <button type="submit" [disabled]="invioInCorso() || !nuovoNome.trim()">
+        {{ invioInCorso() ? 'Salvo...' : 'Aggiungi' }}
+      </button>
+    </div>
+  </form>
+
+  @if (errore(); as messaggio) {
+    <p class="errore" role="alert">{{ messaggio }}</p>
+  }
+</section>
+
+<section class="card">
+  <h2>Soci <span class="conteggio">{{ soci().length }}</span></h2>
+  @if (caricamento()) {
+    <p class="vuoto">Caricamento...</p>
+  } @else {
+    <ul>
+      @for (socio of soci(); track socio.id) {
+        <li>{{ socio.nome }}</li>
+      } @empty {
+        <li class="vuoto">Nessun socio inserito.</li>
+      }
+    </ul>
+  }
+</section>
