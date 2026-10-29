@@ -1,0 +1,40 @@
+# Aggiornamenti automatici delle dipendenze: Dependabot apre una pull request a settimana
+# per ecosistema, con gli aggiornamenti raggruppati. Ogni PR passa dalla CI prima del merge.
+
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      nuget:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      angular:
+        patterns: ['@angular/*', '@angular-devkit/*']
+      npm:
+        patterns: ['*']
+        exclude-patterns: ['@angular/*', '@angular-devkit/*']
+    ignore:
+      # Le major di Angular si fanno a mano con "ng update" (migrano anche il codice).
+      - dependency-name: '@angular/*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@angular-devkit/*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']
