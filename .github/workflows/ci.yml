@@ -1,0 +1,74 @@
+# Build e controlli automatici.
+# Gira su ogni pull request verso main e su ogni push su main (cioe' dopo ogni merge).
+# I due job "Backend" e "Frontend" sono i controlli obbligatori per fare merge su main.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Se arriva un nuovo push sulla stessa pull request, la build precedente viene annullata.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+
+      - name: Ripristino pacchetti e strumenti
+        run: |
+          dotnet restore ScacchiASD.slnx
+          dotnet tool restore
+
+      - name: Controllo formattazione
+        run: dotnet format ScacchiASD.slnx --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build ScacchiASD.slnx --configuration Release --no-restore
+
+      - name: Controllo migration mancanti
+        run: dotnet dotnet-ef migrations has-pending-model-changes --project ScacchiASD.Api --configuration Release --no-build
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installazione dipendenze
+        run: npm ci
+
+      - name: Controllo formattazione
+        run: npm run format:check
+
+      - name: Build (produzione)
+        run: npm run build
+
+      - name: Test
+        run: npm run test:ci
