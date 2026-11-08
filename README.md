@@ -7,7 +7,8 @@ ws-scacchiasd/
 ├── .github/     CI (workflows/ci.yml) e aggiornamenti automatici delle dipendenze (dependabot.yml)
 ├── backend/     Soluzione .NET (ScacchiASD.slnx) con il progetto ScacchiASD.Api
 ├── frontend/    Angular
-└── startup-dev.ps1
+├── startup-dev.ps1   avvia il dev (backend + frontend)
+└── stop-dev.ps1      ferma il dev
 ```
 
 ## Come si lavora
@@ -52,10 +53,27 @@ In produzione il backend serve anche il frontend compilato (cartella `wwwroot`):
 
 ## Sviluppo locale
 
-Tutto insieme (due finestre PowerShell, poi apre il browser):
+### Porte in sviluppo
+
+| Pezzo    | Indirizzo                | Note                                                     |
+|----------|--------------------------|----------------------------------------------------------|
+| Backend  | https://localhost:7244   | quella da usare                                          |
+| Backend  | http://localhost:5019    | stesso backend senza https (dal modello di .NET, non usata) |
+| Frontend | http://localhost:4201    | `/api` viene girato al backend su 7244 dal proxy         |
+| Database | SQL Server su `localhost` | database `ScacchiASD`                                   |
+
+Il frontend usa la 4201 (non la 4200 predefinita di Angular) per poter girare insieme ad altri progetti Angular sullo stesso PC.
+
+Tutto insieme (due finestre PowerShell: parte il backend, il frontend parte solo quando il backend risponde, poi si apre il browser). Il comando funziona sia da cmd sia da PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\startup-dev.ps1
+```
+
+Per fermare tutto (chiude le due finestre e libera le porte, anche se backend o frontend sono stati avviati a mano):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
 ```
 
 Oppure separatamente.
@@ -67,7 +85,7 @@ cd backend
 dotnet run --project ScacchiASD.Api --launch-profile Development
 ```
 
-Frontend (http://localhost:4200). Le chiamate a `/api` vengono girate al backend dal proxy (`proxy.conf.json`):
+Frontend (http://localhost:4201). Le chiamate a `/api` vengono girate al backend dal proxy (`proxy.conf.json`):
 
 ```bash
 cd frontend
