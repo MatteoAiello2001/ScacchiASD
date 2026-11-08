@@ -6,12 +6,26 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// In dev la stringa di connessione e' in appsettings.Development.json.
-// In prod non e' nel repo: la fornisce Azure (impostazione "ConnectionStrings:ScacchiASD").
+// Stringa di connessione: appsettings.Development.json in dev, appsettings.Production.json in prod.
+// In prod non c'e' nessuna password: l'app entra nel database con la sua identita' gestita di Azure.
 builder.Services.AddDbContext<ScacchiASDContext>(options =>
-  options.UseSqlServer(builder.Configuration.GetConnectionString("ScacchiASD")));
+  options.UseSqlServer(
+    builder.Configuration.GetConnectionString("ScacchiASD"),
+    // Il database gratuito di Azure va in pausa dopo 15 minuti senza uso e ci mette
+    // fino a circa un minuto a ripartire: intanto riprovo invece di dare errore.
+    sql => sql.EnableRetryOnFailure(
+      maxRetryCount: 10,
+      maxRetryDelay: TimeSpan.FromSeconds(30),
+      errorNumbersToAdd: null)));
 
 var app = builder.Build();
+
+// Fuori dal dev le migration le applica l'app all'avvio. In dev si lanciano a mano (vedi README).
+if (!app.Environment.IsDevelopment())
+{
+  using var scope = app.Services.CreateScope();
+  scope.ServiceProvider.GetRequiredService<ScacchiASDContext>().Database.Migrate();
+}
 
 if (app.Environment.IsDevelopment())
 {
