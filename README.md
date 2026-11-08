@@ -52,6 +52,17 @@ In produzione il backend serve anche il frontend compilato (cartella `wwwroot`):
 
 ## Sviluppo locale
 
+### Porte in sviluppo
+
+| Pezzo    | Indirizzo                | Note                                                     |
+|----------|--------------------------|----------------------------------------------------------|
+| Backend  | https://localhost:7244   | quella da usare                                          |
+| Backend  | http://localhost:5019    | stesso backend senza https (dal modello di .NET, non usata) |
+| Frontend | http://localhost:4201    | `/api` viene girato al backend su 7244 dal proxy         |
+| Database | SQL Server su `localhost` | database `ScacchiASD`                                   |
+
+Il frontend usa la 4201 (non la 4200 predefinita di Angular) per poter girare insieme ad altri progetti Angular sullo stesso PC.
+
 Tutto insieme (due finestre PowerShell, poi apre il browser):
 
 ```powershell
@@ -67,7 +78,7 @@ cd backend
 dotnet run --project ScacchiASD.Api --launch-profile Development
 ```
 
-Frontend (http://localhost:4200). Le chiamate a `/api` vengono girate al backend dal proxy (`proxy.conf.json`):
+Frontend (http://localhost:4201). Le chiamate a `/api` vengono girate al backend dal proxy (`proxy.conf.json`):
 
 ```bash
 cd frontend
