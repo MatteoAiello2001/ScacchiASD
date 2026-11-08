@@ -63,7 +63,7 @@ In produzione il backend serve anche il frontend compilato (cartella `wwwroot`):
 
 Il frontend usa la 4201 (non la 4200 predefinita di Angular) per poter girare insieme ad altri progetti Angular sullo stesso PC.
 
-Tutto insieme (due finestre PowerShell, poi apre il browser):
+Tutto insieme (due finestre PowerShell: parte il backend, il frontend parte solo quando il backend risponde, poi si apre il browser). Il comando funziona sia da cmd sia da PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\startup-dev.ps1
