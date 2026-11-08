@@ -42,14 +42,31 @@ Dependabot apre ogni lunedì pull request raggruppate con gli aggiornamenti di N
 | Ambiente    | Server database               | Database     | Backend (`ASPNETCORE_ENVIRONMENT`) | Frontend (`--configuration`) |
 |-------------|-------------------------------|--------------|------------------------------------|------------------------------|
 | Development | `localhost` (il proprio PC)   | `ScacchiASD` | `Development`                      | `development`                |
-| Production  | Azure SQL (da configurare)    | `ScacchiASD` | `Production`                       | `production`                 |
+| Production  | `scacchiasd-sql.database.windows.net` (Azure SQL, offerta gratuita) | `ScacchiASD` | `Production` | `production` |
 
 Il database si chiama uguale in tutti gli ambienti: cambia solo il server.
 
-- Dev: la stringa di connessione è in `backend/ScacchiASD.Api/appsettings.Development.json`.
-- Prod: la stringa di connessione **non sta nel repo**. La fornisce Azure come impostazione `ConnectionStrings__ScacchiASD`.
+- Dev: la stringa di connessione è in `backend/ScacchiASD.Api/appsettings.Development.json`. Il backend entra con il proprio utente Windows.
+- Prod: la stringa di connessione è in `backend/ScacchiASD.Api/appsettings.Production.json` e **non contiene password**. L'app entra nel database con la sua identità gestita di Azure (utente `scacchiasd` nel database, con i ruoli `db_datareader`, `db_datawriter`, `db_ddladmin`).
 
 In produzione il backend serve anche il frontend compilato (cartella `wwwroot`): si rilascia un unico pacchetto.
+
+## Produzione (Azure)
+
+Tutto sta nel gruppo di risorse `rg-scacchiasd` (Italy North):
+
+| Risorsa                  | Cosa è                                                           |
+|--------------------------|------------------------------------------------------------------|
+| `plan-scacchiasd`        | piano App Service F1 (gratuito)                                  |
+| `scacchiasd`             | App Service: il sito (backend + frontend)                        |
+| `scacchiasd`             | Application Insights: errori e richieste del sito                |
+| `scacchiasd-sql`         | server SQL (solo autenticazione Microsoft Entra)                 |
+| `ScacchiASD`             | database, offerta gratuita (va in pausa dopo 15 minuti senza uso) |
+| `id-scacchiasd-github`   | identità usata da GitHub Actions per rilasciare                  |
+
+Il rilascio parte da solo a ogni merge su `main` (workflow `.github/workflows/deploy.yml`), oppure a mano da GitHub: **Actions → Deploy → Run workflow**. All'avvio l'app applica da sola le migration mancanti.
+
+Limiti del piano gratuito: 60 minuti di CPU al giorno, l'app si spegne dopo circa 20 minuti senza visite (la prima pagina dopo è lenta), il database va in pausa dopo 15 minuti e si sospende fino al mese successivo se finisce la quota gratuita.
 
 ## Sviluppo locale
 
