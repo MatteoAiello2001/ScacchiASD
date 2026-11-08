@@ -7,7 +7,8 @@ ws-scacchiasd/
 ├── .github/     CI (workflows/ci.yml) e aggiornamenti automatici delle dipendenze (dependabot.yml)
 ├── backend/     Soluzione .NET (ScacchiASD.slnx) con il progetto ScacchiASD.Api
 ├── frontend/    Angular
-└── startup-dev.ps1
+├── startup-dev.ps1   avvia il dev (backend + frontend)
+└── stop-dev.ps1      ferma il dev
 ```
 
 ## Come si lavora
@@ -67,6 +68,12 @@ Tutto insieme (due finestre PowerShell: parte il backend, il frontend parte solo
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\startup-dev.ps1
+```
+
+Per fermare tutto (chiude le due finestre e libera le porte, anche se backend o frontend sono stati avviati a mano):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
 ```
 
 Oppure separatamente.
