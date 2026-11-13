@@ -2,9 +2,14 @@
   <div class="contenuto">
     <span class="logo" aria-hidden="true">♞</span>
     <h1>ScacchiASD</h1>
-    @if (ambiente !== 'production') {
-      <span class="ambiente">{{ ambiente }}</span>
-    }
+    <div class="info">
+      @if (ambiente(); as ambiente) {
+        <span class="ambiente">{{ ambiente }}</span>
+      }
+      @if (versione()) {
+        <span class="versione">{{ versione() }}</span>
+      }
+    </div>
   </div>
 </header>
 

@@ -1,8 +1,11 @@
-# Rilascio in produzione su Azure (App Service "scacchiasd").
+# Rilascio su Azure: Pacchetto -> Staging (automatico) -> Produzione (dopo approvazione).
 # Parte a ogni push su main (cioe' dopo ogni merge), oppure a mano da GitHub: Actions > Deploy > Run workflow.
-# Il backend serve anche il frontend compilato (cartella wwwroot): si rilascia un unico pacchetto.
-# Accesso ad Azure senza password: GitHub si presenta con un token (OIDC) che Azure riconosce
-# grazie alla credenziale federata dell'identita' "id-scacchiasd-github".
+#
+# - Il pacchetto si compila una volta sola: in prod va esattamente quello provato in staging.
+# - Il backend serve anche il frontend compilato (cartella wwwroot): un unico pacchetto.
+# - Produzione aspetta l'approvazione nell'environment "production" (Settings > Environments).
+# - Accesso ad Azure senza password (OIDC): ogni environment ha la sua identita',
+#   che puo' pubblicare solo sulla propria app (staging non puo' toccare prod).
 
 name: Deploy
 
@@ -10,11 +13,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-
-# Un rilascio alla volta. Uno gia' partito non viene interrotto a meta'.
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -36,6 +34,15 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # Data del rilascio + numero progressivo del workflow, es. 2026.11.13-42.
+      # Si vede nell'header del sito e nel riepilogo di questa esecuzione.
+      - name: Versione
+        id: versione
+        run: |
+          versione="$(date -u +%Y.%m.%d)-${{ github.run_number }}"
+          echo "valore=$versione" >> "$GITHUB_OUTPUT"
+          echo "### Versione $versione" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -44,7 +51,10 @@ jobs:
 
       - name: Publish backend
         working-directory: backend
-        run: dotnet publish ScacchiASD.Api --configuration Release --output ../pacchetto
+        run: >
+          dotnet publish ScacchiASD.Api --configuration Release --output ../pacchetto
+          -p:InformationalVersion=${{ steps.versione.outputs.valore }}
+          -p:IncludeSourceRevisionInInformationalVersion=false
 
       - name: Frontend dentro wwwroot del backend
         run: |
@@ -57,10 +67,48 @@ jobs:
           path: pacchetto
           if-no-files-found: error
 
-  production:
-    name: Produzione
+  staging:
+    name: Staging
     needs: build
     runs-on: ubuntu-latest
+    # Un rilascio alla volta su staging; uno gia' partito non viene interrotto a meta'.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.webapp-url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: pacchetto
+          path: pacchetto
+
+      - name: Accesso ad Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Rilascio su App Service
+        id: deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: scacchiasd-staging
+          package: pacchetto
+
+  production:
+    name: Produzione
+    needs: staging
+    runs-on: ubuntu-latest
+    # Se ci sono piu' rilasci in attesa di approvazione, approva il piu' recente e rifiuta gli altri.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     environment:
       name: production
       url: ${{ steps.deploy.outputs.webapp-url }}

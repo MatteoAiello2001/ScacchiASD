@@ -4,9 +4,10 @@ Web app per la gestione dell'ASD di scacchi. Frontend Angular, backend ASP.NET C
 
 ```
 ws-scacchiasd/
-├── .github/     CI (workflows/ci.yml) e aggiornamenti automatici delle dipendenze (dependabot.yml)
+├── .github/     CI (workflows/ci.yml), rilascio (workflows/deploy.yml), Dependabot (dependabot.yml)
 ├── backend/     Soluzione .NET (ScacchiASD.slnx) con il progetto ScacchiASD.Api
 ├── frontend/    Angular
+├── infra/       script di creazione delle risorse Azure
 ├── startup-dev.ps1   avvia il dev (backend + frontend)
 └── stop-dev.ps1      ferma il dev
 ```
@@ -39,34 +40,65 @@ Dependabot apre ogni lunedì pull request raggruppate con gli aggiornamenti di N
 
 ## Ambienti
 
-| Ambiente    | Server database               | Database     | Backend (`ASPNETCORE_ENVIRONMENT`) | Frontend (`--configuration`) |
-|-------------|-------------------------------|--------------|------------------------------------|------------------------------|
-| Development | `localhost` (il proprio PC)   | `ScacchiASD` | `Development`                      | `development`                |
-| Production  | `scacchiasd-sql.database.windows.net` (Azure SQL, offerta gratuita) | `ScacchiASD` | `Production` | `production` |
+| Ambiente    | Indirizzo | Server database | Database | `ASPNETCORE_ENVIRONMENT` |
+|-------------|-----------|-----------------|----------|--------------------------|
+| Development | http://localhost:4201 | `localhost` (il proprio PC) | `ScacchiASD` | `Development` |
+| Staging     | https://scacchiasd-staging-ffh9gyhjgsdcbcgd.italynorth-01.azurewebsites.net | `scacchiasd-sql-staging.database.windows.net` | `ScacchiASD` | `Staging` |
+| Production  | https://scacchiasd-c7gxdch7amgsb4cf.italynorth-01.azurewebsites.net | `scacchiasd-sql.database.windows.net` | `ScacchiASD` | `Production` |
 
-Il database si chiama uguale in tutti gli ambienti: cambia solo il server.
+Il database si chiama uguale in tutti gli ambienti: cambia solo il server. Staging e prod hanno ciascuno il proprio server e il proprio database: le prove su staging non toccano i dati di prod.
 
 - Dev: la stringa di connessione è in `backend/ScacchiASD.Api/appsettings.Development.json`. Il backend entra con il proprio utente Windows.
-- Prod: la stringa di connessione è in `backend/ScacchiASD.Api/appsettings.Production.json` e **non contiene password**. L'app entra nel database con la sua identità gestita di Azure (utente `scacchiasd` nel database, con i ruoli `db_datareader`, `db_datawriter`, `db_ddladmin`).
+- Staging e prod: la stringa di connessione è in `appsettings.Staging.json` / `appsettings.Production.json` e **non contiene password**. L'app entra nel database con la sua identità gestita di Azure (utente `scacchiasd-staging` / `scacchiasd` nel database, con i ruoli `db_datareader`, `db_datawriter`, `db_ddladmin`).
 
-In produzione il backend serve anche il frontend compilato (cartella `wwwroot`): si rilascia un unico pacchetto.
+Staging e prod ricevono **lo stesso pacchetto**: il frontend chiede al backend (`/api/info`) in che ambiente si trova e che versione è. Nell'header compaiono la scritta gialla dell'ambiente (non in prod) e la versione (es. `2026.11.13-42`, in dev `locale`).
 
-## Produzione (Azure)
+## Rilascio
+
+```
+merge su main ──► Pacchetto ──► Staging (automatico) ──► Produzione (dopo approvazione)
+```
+
+1. Si fa merge di una pull request su `main`: parte il workflow **Deploy** (`.github/workflows/deploy.yml`).
+2. **Pacchetto**: compila frontend e backend una volta sola, con la versione `AAAA.MM.GG-<numero esecuzione>`.
+3. **Staging**: pubblica il pacchetto su staging, da solo.
+4. **Produzione**: si ferma in attesa (*Waiting for review*). Dopo aver provato staging: **Actions → Deploy → l'esecuzione → Review deployments → `production` → Approve and deploy**. Con **Reject** prod resta com'era.
+
+In prod va esattamente il pacchetto provato in staging. Se ci sono più rilasci in attesa, si approva il più recente e si rifiutano gli altri. Lo storico dei rilasci (cosa c'è in ogni ambiente, con il commit) è in **Settings → Environments** o nella pagina del repo, sezione *Deployments*.
+
+All'avvio l'app applica da sola le migration mancanti al suo database.
+
+## Azure
 
 Tutto sta nel gruppo di risorse `rg-scacchiasd` (Italy North):
 
-| Risorsa                  | Cosa è                                                           |
-|--------------------------|------------------------------------------------------------------|
-| `plan-scacchiasd`        | piano App Service F1 (gratuito)                                  |
-| `scacchiasd`             | App Service: il sito (backend + frontend)                        |
-| `scacchiasd`             | Application Insights: errori e richieste del sito                |
-| `scacchiasd-sql`         | server SQL (solo autenticazione Microsoft Entra)                 |
-| `ScacchiASD`             | database, offerta gratuita (va in pausa dopo 15 minuti senza uso) |
-| `id-scacchiasd-github`   | identità usata da GitHub Actions per rilasciare                  |
+| Risorsa                         | Ambiente | Cosa è                                                      |
+|---------------------------------|----------|-------------------------------------------------------------|
+| `plan-scacchiasd`               | entrambi | piano App Service F1 (gratuito), condiviso dalle due app    |
+| `scacchiasd`                    | prod     | App Service: il sito (backend + frontend)                   |
+| `scacchiasd-staging`            | staging  | App Service: il sito                                        |
+| `scacchiasd`                    | prod     | Application Insights: errori e richieste del sito           |
+| `scacchiasd-staging`            | staging  | Application Insights (tetto di 100 MB di dati al giorno)    |
+| `scacchiasd-sql` / `ScacchiASD` | prod     | server SQL (solo autenticazione Microsoft Entra) e database, offerta gratuita |
+| `scacchiasd-sql-staging` / `ScacchiASD` | staging | come sopra                                       |
+| `id-scacchiasd-github`          | prod     | identità con cui GitHub Actions pubblica su prod            |
+| `id-scacchiasd-github-staging`  | staging  | identità con cui GitHub Actions pubblica su staging (non può toccare prod) |
 
-Il rilascio parte da solo a ogni merge su `main` (workflow `.github/workflows/deploy.yml`), oppure a mano da GitHub: **Actions → Deploy → Run workflow**. All'avvio l'app applica da sola le migration mancanti.
+Staging è stato creato con `infra/crea-staging.ps1`: lo script documenta cosa esiste su Azure e su GitHub (environment `staging`, approvazione obbligatoria su `production`).
 
-Limiti del piano gratuito: 60 minuti di CPU al giorno, l'app si spegne dopo circa 20 minuti senza visite (la prima pagina dopo è lenta), il database va in pausa dopo 15 minuti e si sospende fino al mese successivo se finisce la quota gratuita.
+Limiti del piano gratuito:
+- App: 60 minuti di CPU al giorno; l'app si spegne dopo circa 20 minuti senza visite e la prima pagina dopo è lenta.
+- Database: va in pausa dopo 60 minuti senza uso (fisso con l'offerta gratuita). Quota di 100.000 secondi vCore al mese, circa 55 ore di database acceso; se finisce, il database si sospende fino al mese successivo. Ogni database (staging e prod) ha la sua quota.
+
+### Accesso ai database da SSMS
+
+| Campo          | Valore |
+|----------------|--------|
+| Server name    | `scacchiasd-sql.database.windows.net` (prod) o `scacchiasd-sql-staging.database.windows.net` (staging) |
+| Authentication | Microsoft Entra MFA, con il proprio account amministratore |
+| Encryption     | Mandatory |
+
+Il firewall del server accetta solo Azure e gli indirizzi IP aggiunti a mano: se cambia l'IP di casa, va aggiunto in **server SQL → Rete → Aggiungi l'indirizzo IPv4 client**.
 
 ## Sviluppo locale
 

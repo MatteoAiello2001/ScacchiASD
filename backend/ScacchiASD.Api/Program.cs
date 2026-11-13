@@ -6,12 +6,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// Stringa di connessione: appsettings.Development.json in dev, appsettings.Production.json in prod.
-// In prod non c'e' nessuna password: l'app entra nel database con la sua identita' gestita di Azure.
+// Stringa di connessione: appsettings.<Ambiente>.json (Development, Staging, Production).
+// Su Azure non c'e' nessuna password: l'app entra nel database con la sua identita' gestita di Azure.
 builder.Services.AddDbContext<ScacchiASDContext>(options =>
   options.UseSqlServer(
     builder.Configuration.GetConnectionString("ScacchiASD"),
-    // Il database gratuito di Azure va in pausa dopo 15 minuti senza uso e ci mette
+    // Il database gratuito di Azure va in pausa dopo 60 minuti senza uso e ci mette
     // fino a circa un minuto a ripartire: intanto riprovo invece di dare errore.
     sql => sql.EnableRetryOnFailure(
       maxRetryCount: 10,
