@@ -11,6 +11,15 @@ updates:
     groups:
       nuget:
         patterns: ['*']
+    ignore:
+      # Questi pacchetti seguono la versione di .NET (oggi 10, LTS): il passaggio a una
+      # major nuova si fa a mano insieme a TargetFramework e global.json.
+      - dependency-name: 'Microsoft.AspNetCore.*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'Microsoft.EntityFrameworkCore*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'System.*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /frontend
@@ -29,6 +38,10 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: '@angular-devkit/*'
         update-types: ['version-update:semver-major']
+      # La versione di TypeScript la decide Angular (Angular 22 vuole TypeScript 6.0.x):
+      # si aggiorna insieme ad Angular, non da sola.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
 
   - package-ecosystem: github-actions
     directory: /
