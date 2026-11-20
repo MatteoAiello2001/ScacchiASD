@@ -8,6 +8,7 @@ ws-scacchiasd/
 ├── backend/     Soluzione .NET (ScacchiASD.slnx) con il progetto ScacchiASD.Api
 ├── frontend/    Angular
 ├── infra/       script di creazione delle risorse Azure
+├── Dockerfile   ricetta del container (frontend + backend)
 ├── startup-dev.ps1   avvia il dev (backend + frontend)
 └── stop-dev.ps1      ferma il dev
 ```
@@ -31,12 +32,13 @@ ws-scacchiasd/
 |------------|-----------------------------------------------------------------------------------------------|
 | `Backend`  | formattazione (`dotnet format`), build, nessuna migration mancante rispetto ai modelli         |
 | `Frontend` | formattazione (Prettier), build di produzione, test                                           |
+| `Container` | costruzione dell'immagine dal `Dockerfile` (senza pubblicarla)                                  |
 
 Per non scoprire gli errori solo sulla pull request, gli stessi controlli si lanciano in locale (vedi [Controlli prima del push](#controlli-prima-del-push)).
 
 ### Dipendenze
 
-Dependabot apre ogni lunedì pull request raggruppate con gli aggiornamenti di NuGet, npm e GitHub Actions. Le major di Angular sono escluse: si fanno a mano con `ng update`.
+Dependabot apre ogni lunedì pull request raggruppate con gli aggiornamenti di NuGet, npm, immagini Docker e GitHub Actions. Le major di Angular sono escluse: si fanno a mano con `ng update`.
 
 ## Ambienti
 
@@ -66,7 +68,7 @@ merge su main ──► Pacchetto ──► Staging (automatico) ──► Produ
 
 In prod va esattamente il pacchetto provato in staging. Se ci sono più rilasci in attesa, si approva il più recente e si rifiutano gli altri. Lo storico dei rilasci (cosa c'è in ogni ambiente, con il commit) è in **Settings → Environments** o nella pagina del repo, sezione *Deployments*.
 
-All'avvio l'app applica da sola le migration mancanti al suo database.
+All'avvio l'app applica da sola le migration mancanti al suo database (su App Service; per lo staging in container vedi [Prova: staging su Azure Container Apps](#prova-staging-su-azure-container-apps)).
 
 ## Azure
 
@@ -89,6 +91,25 @@ Staging è stato creato con `infra/crea-staging.ps1`: lo script documenta cosa e
 Limiti del piano gratuito:
 - App: 60 minuti di CPU al giorno; l'app si spegne dopo circa 20 minuti senza visite e la prima pagina dopo è lenta.
 - Database: va in pausa dopo 60 minuti senza uso (fisso con l'offerta gratuita). Quota di 100.000 secondi vCore al mese, circa 55 ore di database acceso; se finisce, il database si sospende fino al mese successivo. Ogni database (staging e prod) ha la sua quota.
+
+### Prova: staging su Azure Container Apps
+
+In prova, accanto allo staging su App Service, c'è uno **staging in container** su Azure Container Apps: stesso codice, stesso database di staging, indirizzo diverso.
+
+- Indirizzo: https://scacchiasd-staging.nicemushroom-2e0f1d4d.italynorth.azurecontainerapps.io
+- Il container si costruisce dal `Dockerfile` nella radice del repo (frontend + backend in un'unica immagine) e viene pubblicato, pubblico, su `ghcr.io/matteoaiello2001/scacchiasd:<versione>`.
+- Si spegne quando nessuno lo usa (da 0 a 1 copia) e si riaccende alla prima richiesta.
+- Le migration **non** girano all'avvio (`Database__MigraAllAvvio=false`): le applica il lavoro `scacchiasd-staging-migra` (l'app avviata con `--migra`) a ogni rilascio, prima di aggiornare l'app. Su App Service restano all'avvio come prima.
+- Application Insights nel container è collegato dal codice (`Azure.Monitor.OpenTelemetry.AspNetCore`), solo quando l'app gira su Container Apps.
+- Nel database di staging: `scacchiasd-staging-ca` (l'app: lettura e scrittura) e `scacchiasd-staging-migra` (le migration: anche modifica delle tabelle).
+
+| Risorsa                    | Cosa è |
+|----------------------------|--------|
+| `cae-scacchiasd`           | ambiente Container Apps (a consumo, log nello spazio di lavoro di Application Insights) |
+| `scacchiasd-staging`       | Container App: il sito (tipo diverso dall'App Service omonimo) |
+| `scacchiasd-staging-migra` | lavoro che applica le migration |
+
+Create con `infra/crea-container-apps-staging.ps1`. Nel workflow Deploy i job **Immagine** e **Staging (container)** sono separati da Produzione: se falliscono, la produzione non è bloccata.
 
 ### Accesso ai database da SSMS
 

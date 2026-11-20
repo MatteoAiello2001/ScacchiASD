@@ -6,6 +6,10 @@
 # - Produzione aspetta l'approvazione nell'environment "production" (Settings > Environments).
 # - Accesso ad Azure senza password (OIDC): ogni environment ha la sua identita',
 #   che puo' pubblicare solo sulla propria app (staging non puo' toccare prod).
+#
+# PROVA Azure Container Apps (solo staging): "Immagine" costruisce il container e lo pubblica
+# su GitHub (ghcr.io); "Staging (container)" applica le migration con un lavoro dedicato e
+# aggiorna la Container App. Questi due job sono separati: se falliscono, Produzione non e' bloccata.
 
 name: Deploy
 
@@ -21,6 +25,8 @@ jobs:
   build:
     name: Pacchetto
     runs-on: ubuntu-latest
+    outputs:
+      versione: ${{ steps.versione.outputs.valore }}
     steps:
       - uses: actions/checkout@v7
 
@@ -100,6 +106,82 @@ jobs:
         with:
           app-name: scacchiasd-staging
           package: pacchetto
+
+  immagine:
+    name: Immagine
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMMAGINE: ghcr.io/matteoaiello2001/scacchiasd:${{ needs.build.outputs.versione }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Accesso a GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Build e pubblicazione immagine
+        run: |
+          docker build --build-arg VERSIONE=${{ needs.build.outputs.versione }} --tag "$IMMAGINE" .
+          docker push "$IMMAGINE"
+          echo "### Immagine $IMMAGINE" >> "$GITHUB_STEP_SUMMARY"
+
+  staging-container:
+    name: Staging (container)
+    needs: [build, immagine]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-staging-container
+      cancel-in-progress: false
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GRUPPO: rg-scacchiasd
+      APP: scacchiasd-staging
+      JOB_MIGRATION: scacchiasd-staging-migra
+      IMMAGINE: ghcr.io/matteoaiello2001/scacchiasd:${{ needs.build.outputs.versione }}
+    steps:
+      - name: Accesso ad Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Estensione Container Apps di Azure CLI
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      # Le migration le applica un lavoro a parte, prima di aggiornare l'app:
+      # cosi' l'app all'avvio non deve aspettare il database.
+      - name: Migration
+        run: |
+          az containerapp job update -g "$GRUPPO" -n "$JOB_MIGRATION" --image "$IMMAGINE" -o none
+          esecuzione=$(az containerapp job start -g "$GRUPPO" -n "$JOB_MIGRATION" --query name -o tsv)
+          echo "Esecuzione: $esecuzione"
+          for i in $(seq 1 60); do
+            stato=$(az containerapp job execution show -g "$GRUPPO" -n "$JOB_MIGRATION" --job-execution-name "$esecuzione" --query properties.status -o tsv)
+            echo "Stato migration: $stato"
+            case "$stato" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped|Degraded) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Migration non terminata entro 10 minuti"
+          exit 1
+
+      - name: Rilascio su Container App
+        id: deploy
+        run: |
+          az containerapp update -g "$GRUPPO" -n "$APP" --image "$IMMAGINE" -o none
+          fqdn=$(az containerapp show -g "$GRUPPO" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
   production:
     name: Produzione

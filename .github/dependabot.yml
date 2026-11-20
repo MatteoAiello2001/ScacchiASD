@@ -43,6 +43,22 @@ updates:
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major', 'version-update:semver-minor']
 
+  # Immagini base del Dockerfile (.NET e Node): aggiornamenti di sicurezza del sistema dentro il container.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      docker:
+        patterns: ['*']
+    ignore:
+      # .NET 10 e Node 24 si cambiano a mano, insieme a global.json e .nvmrc.
+      - dependency-name: 'mcr.microsoft.com/dotnet/*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'node'
+        update-types: ['version-update:semver-major']
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

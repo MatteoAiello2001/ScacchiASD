@@ -1,6 +1,6 @@
 # Build e controlli automatici.
 # Gira su ogni pull request verso main e su ogni push su main (cioe' dopo ogni merge).
-# I due job "Backend" e "Frontend" sono i controlli obbligatori per fare merge su main.
+# I job "Backend", "Frontend" e "Container" sono i controlli obbligatori per fare merge su main.
 
 name: CI
 
@@ -72,3 +72,14 @@ jobs:
 
       - name: Test
         run: npm run test:ci
+
+  container:
+    name: Container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Costruisce l'immagine come farebbe il rilascio, senza pubblicarla: se il Dockerfile
+      # o la compilazione dentro il container si rompono, la pull request diventa rossa.
+      - name: Build immagine
+        run: docker build --build-arg VERSIONE=ci-${{ github.run_number }} --tag scacchiasd:ci .

@@ -1,0 +1,15 @@
+# Cosa NON entra nella costruzione del container (piu' veloce e niente file inutili o locali).
+**/node_modules
+**/bin
+**/obj
+frontend/dist
+frontend/.angular
+**/.vs
+**/.vscode
+.git
+.github
+infra
+*.md
+*.ps1
+# global.json fissa la versione dell'SDK .NET per i PC e la CI; nel container la decide l'immagine .NET 10.
+backend/global.json
