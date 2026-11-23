@@ -1,9 +1,13 @@
-# Rilascio su Azure: Pacchetto -> Staging (automatico) -> Produzione (dopo approvazione).
-# Parte a ogni push su main (cioe' dopo ogni merge), oppure a mano da GitHub: Actions > Deploy > Run workflow.
+# Rilascio su Azure, in base al branch:
+#   push su staging (merge di una PR su staging)    -> Pacchetto -> Staging
+#   push su main    (merge della PR staging -> main) -> Pacchetto -> Produzione
+# Si puo' anche lanciare a mano: Actions > Deploy > Run workflow, scegliendo il branch.
 #
-# - Il pacchetto si compila una volta sola: in prod va esattamente quello provato in staging.
+# - main e' sempre cio' che c'e' in produzione, staging e' sempre cio' che c'e' in staging.
+# - Il merge su main e' l'approvazione per la produzione: non c'e' un'altra conferma.
 # - Il backend serve anche il frontend compilato (cartella wwwroot): un unico pacchetto.
-# - Produzione aspetta l'approvazione nell'environment "production" (Settings > Environments).
+# - Dopo ogni rilascio un controllo chiama /api/info e verifica che il sito risponda con la
+#   versione appena pubblicata; se no, il rilascio diventa rosso.
 # - Accesso ad Azure senza password (OIDC): ogni environment ha la sua identita',
 #   che puo' pubblicare solo sulla propria app (staging non puo' toccare prod).
 
@@ -11,7 +15,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [staging, main]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +24,10 @@ permissions:
 jobs:
   build:
     name: Pacchetto
+    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      versione: ${{ steps.versione.outputs.valore }}
     steps:
       - uses: actions/checkout@v7
 
@@ -41,7 +48,7 @@ jobs:
         run: |
           versione="$(date -u +%Y.%m.%d)-${{ github.run_number }}"
           echo "valore=$versione" >> "$GITHUB_OUTPUT"
-          echo "### Versione $versione" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Versione $versione (${{ github.ref_name }})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build frontend
         working-directory: frontend
@@ -69,6 +76,7 @@ jobs:
 
   staging:
     name: Staging
+    if: github.ref == 'refs/heads/staging'
     needs: build
     runs-on: ubuntu-latest
     # Un rilascio alla volta su staging; uno gia' partito non viene interrotto a meta'.
@@ -77,10 +85,13 @@ jobs:
       cancel-in-progress: false
     environment:
       name: staging
-      url: ${{ steps.deploy.outputs.webapp-url }}
+      url: https://scacchiasd-staging-ffh9gyhjgsdcbcgd.italynorth-01.azurewebsites.net
     permissions:
       contents: read
       id-token: write
+    env:
+      INDIRIZZO: https://scacchiasd-staging-ffh9gyhjgsdcbcgd.italynorth-01.azurewebsites.net
+      VERSIONE: ${{ needs.build.outputs.versione }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -95,26 +106,41 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Rilascio su App Service
-        id: deploy
         uses: azure/webapps-deploy@v3
         with:
           app-name: scacchiasd-staging
           package: pacchetto
 
+      - name: Controllo dopo il rilascio
+        run: |
+          for i in $(seq 1 20); do
+            risposta=$(curl --silent --max-time 60 "$INDIRIZZO/api/info" || true)
+            echo "Tentativo $i: $risposta"
+            case "$risposta" in
+              *"\"versione\":\"$VERSIONE\""*) echo "Il sito risponde con la versione $VERSIONE"; exit 0 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Il sito non risponde con la versione $VERSIONE"
+          exit 1
+
   production:
     name: Produzione
-    needs: staging
+    if: github.ref == 'refs/heads/main'
+    needs: build
     runs-on: ubuntu-latest
-    # Se ci sono piu' rilasci in attesa di approvazione, approva il piu' recente e rifiuta gli altri.
     concurrency:
       group: deploy-production
       cancel-in-progress: false
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.webapp-url }}
+      url: https://scacchiasd-c7gxdch7amgsb4cf.italynorth-01.azurewebsites.net
     permissions:
       contents: read
       id-token: write
+    env:
+      INDIRIZZO: https://scacchiasd-c7gxdch7amgsb4cf.italynorth-01.azurewebsites.net
+      VERSIONE: ${{ needs.build.outputs.versione }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -129,8 +155,20 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Rilascio su App Service
-        id: deploy
         uses: azure/webapps-deploy@v3
         with:
           app-name: scacchiasd
           package: pacchetto
+
+      - name: Controllo dopo il rilascio
+        run: |
+          for i in $(seq 1 20); do
+            risposta=$(curl --silent --max-time 60 "$INDIRIZZO/api/info" || true)
+            echo "Tentativo $i: $risposta"
+            case "$risposta" in
+              *"\"versione\":\"$VERSIONE\""*) echo "Il sito risponde con la versione $VERSIONE"; exit 0 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Il sito non risponde con la versione $VERSIONE"
+          exit 1
