@@ -41,7 +41,8 @@ jobs:
 
       - name: Aggiornamento grande, niente merge automatico
         if: steps.info.outputs.update-type != 'version-update:semver-patch' && steps.info.outputs.update-type != 'version-update:semver-minor'
-        run: echo "::notice::Aggiornamento '${{ steps.info.outputs.update-type }}' di ${{ steps.info.outputs.dependency-names }}: la PR resta da guardare a mano."
+        run: |
+          echo "::notice::Aggiornamento '${{ steps.info.outputs.update-type }}' di ${{ steps.info.outputs.dependency-names }}, la PR resta da guardare a mano."
 
       - name: Attesa dei controlli, merge e rilascio su staging
         if: steps.info.outputs.update-type == 'version-update:semver-patch' || steps.info.outputs.update-type == 'version-update:semver-minor'
