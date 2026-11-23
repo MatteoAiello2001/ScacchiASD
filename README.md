@@ -4,7 +4,7 @@ Web app per la gestione dell'ASD di scacchi. Frontend Angular, backend ASP.NET C
 
 ```
 ws-scacchiasd/
-├── .github/     CI (workflows/ci.yml), rilascio (workflows/deploy.yml), sveglia delle app (workflows/sveglia.yml), Dependabot (dependabot.yml)
+├── .github/     CI (workflows/ci.yml), rilascio (workflows/deploy.yml), merge automatico di Dependabot (workflows/dependabot-automatico.yml), Dependabot (dependabot.yml)
 ├── backend/     Soluzione .NET (ScacchiASD.slnx) con il progetto ScacchiASD.Api
 ├── frontend/    Angular
 ├── infra/       script di creazione delle risorse Azure
@@ -14,16 +14,26 @@ ws-scacchiasd/
 
 ## Come si lavora
 
-`main` è protetto: non si fa push diretto, ci si arriva solo con una pull request.
+Due branch fissi, entrambi protetti (niente push diretto, solo pull request con i controlli verdi):
 
-1. Parti da `main` aggiornato e crea un branch:
+| Branch    | È sempre uguale a | Ci si arriva con |
+|-----------|-------------------|------------------|
+| `staging` | ciò che c'è in **staging** | PR di sviluppo e di Dependabot, **Squash and merge** |
+| `main`    | ciò che c'è in **produzione** | PR `staging` → `main`, **Create a merge commit** (l'unica permessa: così i due branch restano collegati) |
+
+`staging` è il branch principale del repo: le PR nuove si aprono lì di default. Per sapere cosa è in staging ma non ancora in prod basta confrontare i due branch (in Sourcetree o su GitHub: `main...staging`).
+
+1. Parti da `staging` aggiornato e crea un branch:
    - `feature/<descrizione>` per una funzionalità nuova (es. `feature/anagrafica-soci`)
    - `fix/<descrizione>` per una correzione (es. `fix/nome-vuoto`)
    - `chore/<descrizione>` per manutenzione, configurazione, aggiornamenti
 2. Committa sul branch e fai push.
-3. Apri una pull request verso `main`.
+3. Apri una pull request verso `staging`.
 4. La CI (GitHub Actions) controlla backend e frontend. Si fa merge solo con entrambi i controlli verdi.
-5. Merge con **Squash and merge**, poi cancella il branch.
+5. **Squash and merge**: il branch si cancella da solo e staging si aggiorna da solo.
+6. Per portare in produzione: PR da `staging` a `main` → **Create a merge commit** → la produzione si aggiorna da sola.
+
+Correzione urgente in produzione: branch da `main`, PR verso `main`, poi la stessa correzione va riportata su `staging` (PR `main` → `staging`).
 
 ### Cosa controlla la CI
 
@@ -36,35 +46,38 @@ Per non scoprire gli errori solo sulla pull request, gli stessi controlli si lan
 
 ### Dipendenze
 
-Dependabot apre ogni lunedì pull request raggruppate con gli aggiornamenti di NuGet, npm e GitHub Actions. Le major di Angular sono escluse: si fanno a mano con `ng update`.
+Dependabot apre ogni lunedì, **su `staging`**, pull request raggruppate con gli aggiornamenti di NuGet, npm e GitHub Actions. Le major di Angular sono escluse: si fanno a mano con `ng update`.
+
+Il workflow **Dependabot automatico** (`.github/workflows/dependabot-automatico.yml`) gestisce da solo gli aggiornamenti **piccoli** (correzioni e versioni minori): aspetta i controlli verdi, fa il merge su `staging` e avvia il rilascio su staging. Gli aggiornamenti **grandi** (salti di versione) restano aperti da guardare a mano. In produzione arrivano solo con la PR `staging` → `main`.
 
 ## Ambienti
 
-| Ambiente    | Indirizzo | Server database | Database | `ASPNETCORE_ENVIRONMENT` |
-|-------------|-----------|-----------------|----------|--------------------------|
-| Development | http://localhost:4201 | `localhost` (il proprio PC) | `ScacchiASD` | `Development` |
-| Staging     | https://scacchiasd-staging-ffh9gyhjgsdcbcgd.italynorth-01.azurewebsites.net | `scacchiasd-sql-staging.database.windows.net` | `ScacchiASD` | `Staging` |
-| Production  | https://scacchiasd-c7gxdch7amgsb4cf.italynorth-01.azurewebsites.net | `scacchiasd-sql.database.windows.net` | `ScacchiASD` | `Production` |
+| Ambiente    | Branch | Indirizzo | Server database | Database | `ASPNETCORE_ENVIRONMENT` |
+|-------------|--------|-----------|-----------------|----------|--------------------------|
+| Development | il proprio branch | http://localhost:4201 | `localhost` (il proprio PC) | `ScacchiASD` | `Development` |
+| Staging     | `staging` | https://scacchiasd-staging-ffh9gyhjgsdcbcgd.italynorth-01.azurewebsites.net | `scacchiasd-sql-staging.database.windows.net` | `ScacchiASD` | `Staging` |
+| Production  | `main` | https://scacchiasd-c7gxdch7amgsb4cf.italynorth-01.azurewebsites.net | `scacchiasd-sql.database.windows.net` | `ScacchiASD` | `Production` |
 
 Il database si chiama uguale in tutti gli ambienti: cambia solo il server. Staging e prod hanno ciascuno il proprio server e il proprio database: le prove su staging non toccano i dati di prod.
 
 - Dev: la stringa di connessione è in `backend/ScacchiASD.Api/appsettings.Development.json`. Il backend entra con il proprio utente Windows.
 - Staging e prod: la stringa di connessione è in `appsettings.Staging.json` / `appsettings.Production.json` e **non contiene password**. L'app entra nel database con la sua identità gestita di Azure (utente `scacchiasd-staging` / `scacchiasd` nel database, con i ruoli `db_datareader`, `db_datawriter`, `db_ddladmin`).
 
-Staging e prod ricevono **lo stesso pacchetto**: il frontend chiede al backend (`/api/info`) in che ambiente si trova e che versione è. Nell'header compaiono la scritta gialla dell'ambiente (non in prod) e la versione (es. `2026.11.13-42`, in dev `locale`).
+Il frontend chiede al backend (`/api/info`) in che ambiente si trova e che versione è. Nell'header compaiono la scritta gialla dell'ambiente (non in prod) e la versione (es. `2026.11.13-42`, in dev `locale`).
 
 ## Rilascio
 
 ```
-merge su main ──► Pacchetto ──► Staging (automatico) ──► Produzione (dopo approvazione)
+merge su staging ──► Pacchetto ──► Staging    ──► controllo
+merge su main    ──► Pacchetto ──► Produzione ──► controllo
 ```
 
-1. Si fa merge di una pull request su `main`: parte il workflow **Deploy** (`.github/workflows/deploy.yml`).
-2. **Pacchetto**: compila frontend e backend una volta sola, con la versione `AAAA.MM.GG-<numero esecuzione>`.
-3. **Staging**: pubblica il pacchetto su staging, da solo.
-4. **Produzione**: si ferma in attesa (*Waiting for review*). Dopo aver provato staging: **Actions → Deploy → l'esecuzione → Review deployments → `production` → Approve and deploy**. Con **Reject** prod resta com'era.
+1. Un merge su `staging` o su `main` fa partire il workflow **Deploy** (`.github/workflows/deploy.yml`).
+2. **Pacchetto**: compila frontend e backend con la versione `AAAA.MM.GG-<numero esecuzione>`.
+3. **Staging** (da `staging`) o **Produzione** (da `main`): pubblica il pacchetto. Il merge su `main` è l'approvazione per la produzione.
+4. **Controllo**: chiama `/api/info` e verifica che il sito risponda con la versione appena pubblicata; se no, il rilascio diventa rosso.
 
-In prod va esattamente il pacchetto provato in staging. Se ci sono più rilasci in attesa, si approva il più recente e si rifiutano gli altri. Lo storico dei rilasci (cosa c'è in ogni ambiente, con il commit) è in **Settings → Environments** o nella pagina del repo, sezione *Deployments*.
+Staging e produzione partono dallo stesso codice ma ognuno ha il proprio pacchetto, compilato al momento del merge (quindi con un numero di versione diverso). Lo storico dei rilasci (cosa c'è in ogni ambiente, con il commit) è in **Settings → Environments** o nella pagina del repo, sezione *Deployments*. Il rilascio si può lanciare anche a mano: **Actions → Deploy → Run workflow**, scegliendo il branch.
 
 All'avvio l'app applica da sola le migration mancanti al suo database.
 
@@ -83,11 +96,12 @@ Tutto sta nel gruppo di risorse `rg-scacchiasd` (Italy North):
 | `scacchiasd-sql-staging` / `ScacchiASD` | staging | come sopra                                       |
 | `id-scacchiasd-github`          | prod     | identità con cui GitHub Actions pubblica su prod            |
 | `id-scacchiasd-github-staging`  | staging  | identità con cui GitHub Actions pubblica su staging (non può toccare prod) |
+| `la-scacchiasd-sveglia`         | entrambi | Logic App: ogni 10 minuti chiama `/api/info` di prod e staging, così le app non si spengono |
 
-Staging è stato creato con `infra/crea-staging.ps1`: lo script documenta cosa esiste su Azure e su GitHub (environment `staging`, approvazione obbligatoria su `production`).
+Staging è stato creato con `infra/crea-staging.ps1`: lo script documenta cosa esiste su Azure e su GitHub (environment `staging`). In seguito `production` si pubblica solo da `main`, senza altra approvazione: il merge su `main` è l'approvazione.
 
 Limiti del piano gratuito:
-- App: 60 minuti di CPU al giorno; l'app si spegne dopo circa 20 minuti senza visite e la prima pagina dopo è lenta (circa 2 minuti). Per evitarlo il workflow **Sveglia** (`.github/workflows/sveglia.yml`) chiama ogni 10 minuti `/api/info` di prod e staging: non usa il database, quindi non consuma le sue ore. Se il repo resta 60 giorni senza commit, GitHub sospende il workflow e manda un'email per riattivarlo.
+- App: 60 minuti di CPU al giorno; l'app si spegne dopo circa 20 minuti senza visite e la prima pagina dopo è lenta (circa 2 minuti). Per evitarlo la Logic App `la-scacchiasd-sveglia` (creata con `infra/crea-sveglia.ps1`) chiama ogni 10 minuti `/api/info` di prod e staging: non usa il database, quindi non consuma le sue ore. Costo circa 0,20 € al mese. Cronologia: portale Azure → `la-scacchiasd-sveglia` → **Cronologia esecuzioni**.
 - Database: va in pausa dopo 60 minuti senza uso (fisso con l'offerta gratuita). Quota di 100.000 secondi vCore al mese, circa 55 ore di database acceso; se finisce, il database si sospende fino al mese successivo. Ogni database (staging e prod) ha la sua quota.
 
 ### Accesso ai database da SSMS

@@ -1,10 +1,11 @@
-# Aggiornamenti automatici delle dipendenze: Dependabot apre una pull request a settimana
+# Aggiornamenti automatici delle dipendenze: Dependabot apre (su staging) una pull request a settimana
 # per ecosistema, con gli aggiornamenti raggruppati. Ogni PR passa dalla CI prima del merge.
 
 version: 2
 updates:
   - package-ecosystem: nuget
     directory: /backend
+    target-branch: staging
     schedule:
       interval: weekly
       day: monday
@@ -23,6 +24,7 @@ updates:
 
   - package-ecosystem: npm
     directory: /frontend
+    target-branch: staging
     schedule:
       interval: weekly
       day: monday
@@ -45,6 +47,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: staging
     schedule:
       interval: weekly
       day: monday

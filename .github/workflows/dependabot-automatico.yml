@@ -1,0 +1,69 @@
+# Merge automatico degli aggiornamenti PICCOLI di Dependabot su staging, poi rilascio su staging.
+#
+# - Piccolo = correzione (patch) o versione minore (minor): aspetta che i controlli obbligatori
+#   (Backend, Frontend) siano verdi, fa il merge e avvia il rilascio su staging.
+# - Grande (salto di versione, major) o tipo non riconosciuto: non fa niente, la PR resta da guardare.
+# - Se i controlli diventano rossi, questo workflow fallisce e la PR resta aperta.
+# - La produzione non e' toccata: ci si arriva solo con il merge di staging su main.
+#
+# Il rilascio va avviato esplicitamente: un merge fatto da un'automazione di GitHub
+# (GITHUB_TOKEN) non fa partire da solo gli altri workflow.
+
+name: Dependabot automatico
+
+on:
+  pull_request:
+    branches: [staging]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+# Un'esecuzione alla volta per PR: se Dependabot aggiorna la PR, quella vecchia si annulla.
+concurrency:
+  group: dependabot-automatico-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    name: Merge automatico
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Tipo di aggiornamento
+        id: info
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Aggiornamento grande, niente merge automatico
+        if: steps.info.outputs.update-type != 'version-update:semver-patch' && steps.info.outputs.update-type != 'version-update:semver-minor'
+        run: |
+          echo "::notice::Aggiornamento '${{ steps.info.outputs.update-type }}' di ${{ steps.info.outputs.dependency-names }}, la PR resta da guardare a mano."
+
+      - name: Attesa dei controlli, merge e rilascio su staging
+        if: steps.info.outputs.update-type == 'version-update:semver-patch' || steps.info.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          echo "Aggiornamento ${{ steps.info.outputs.update-type }}: ${{ steps.info.outputs.dependency-names }}"
+          # Merge automatico di GitHub: avviene da solo appena i controlli obbligatori sono verdi.
+          gh pr merge "$PR" --squash --auto
+          stato=""
+          for i in $(seq 1 110); do
+            stato=$(gh pr view "$PR" --json state --jq .state)
+            echo "Stato PR: $stato"
+            if [ "$stato" = "MERGED" ]; then break; fi
+            if [ "$stato" = "CLOSED" ]; then echo "PR chiusa senza merge"; exit 0; fi
+            sleep 30
+          done
+          if [ "$stato" != "MERGED" ]; then
+            echo "::error::PR non mergiata entro un'ora: probabilmente un controllo e' rosso. Resta da guardare."
+            exit 1
+          fi
+          gh workflow run deploy.yml --ref staging --repo "$GITHUB_REPOSITORY"
+          echo "### Merge fatto e rilascio su staging avviato" >> "$GITHUB_STEP_SUMMARY"
