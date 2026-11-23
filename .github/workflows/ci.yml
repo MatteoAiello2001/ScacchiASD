@@ -1,14 +1,14 @@
 # Build e controlli automatici.
-# Gira su ogni pull request verso main e su ogni push su main (cioe' dopo ogni merge).
-# I due job "Backend" e "Frontend" sono i controlli obbligatori per fare merge su main.
+# Gira su ogni pull request verso staging o main e su ogni push su staging o main (cioe' dopo ogni merge).
+# I due job "Backend" e "Frontend" sono i controlli obbligatori per fare merge su staging e su main.
 
 name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [staging, main]
   push:
-    branches: [main]
+    branches: [staging, main]
 
 # Se arriva un nuovo push sulla stessa pull request, la build precedente viene annullata.
 concurrency:
