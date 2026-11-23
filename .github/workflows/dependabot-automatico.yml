@@ -65,5 +65,5 @@ jobs:
             echo "::error::PR non mergiata entro un'ora: probabilmente un controllo e' rosso. Resta da guardare."
             exit 1
           fi
-          gh workflow run deploy.yml --ref staging
+          gh workflow run deploy.yml --ref staging --repo "$GITHUB_REPOSITORY"
           echo "### Merge fatto e rilascio su staging avviato" >> "$GITHUB_STEP_SUMMARY"
