@@ -4,7 +4,7 @@ Web app per la gestione dell'ASD di scacchi. Frontend Angular, backend ASP.NET C
 
 ```
 ws-scacchiasd/
-├── .github/     CI (workflows/ci.yml), rilascio (workflows/deploy.yml), sveglia delle app (workflows/sveglia.yml), Dependabot (dependabot.yml)
+├── .github/     CI (workflows/ci.yml), rilascio (workflows/deploy.yml), merge automatico di Dependabot (workflows/dependabot-automatico.yml), Dependabot (dependabot.yml)
 ├── backend/     Soluzione .NET (ScacchiASD.slnx) con il progetto ScacchiASD.Api
 ├── frontend/    Angular
 ├── infra/       script di creazione delle risorse Azure
@@ -96,11 +96,12 @@ Tutto sta nel gruppo di risorse `rg-scacchiasd` (Italy North):
 | `scacchiasd-sql-staging` / `ScacchiASD` | staging | come sopra                                       |
 | `id-scacchiasd-github`          | prod     | identità con cui GitHub Actions pubblica su prod            |
 | `id-scacchiasd-github-staging`  | staging  | identità con cui GitHub Actions pubblica su staging (non può toccare prod) |
+| `la-scacchiasd-sveglia`         | entrambi | Logic App: ogni 10 minuti chiama `/api/info` di prod e staging, così le app non si spengono |
 
 Staging è stato creato con `infra/crea-staging.ps1`: lo script documenta cosa esiste su Azure e su GitHub (environment `staging`). In seguito `production` si pubblica solo da `main`, senza altra approvazione: il merge su `main` è l'approvazione.
 
 Limiti del piano gratuito:
-- App: 60 minuti di CPU al giorno; l'app si spegne dopo circa 20 minuti senza visite e la prima pagina dopo è lenta (circa 2 minuti). Per evitarlo il workflow **Sveglia** (`.github/workflows/sveglia.yml`) chiama ogni 10 minuti `/api/info` di prod e staging: non usa il database, quindi non consuma le sue ore. Se il repo resta 60 giorni senza commit, GitHub sospende il workflow e manda un'email per riattivarlo.
+- App: 60 minuti di CPU al giorno; l'app si spegne dopo circa 20 minuti senza visite e la prima pagina dopo è lenta (circa 2 minuti). Per evitarlo la Logic App `la-scacchiasd-sveglia` (creata con `infra/crea-sveglia.ps1`) chiama ogni 10 minuti `/api/info` di prod e staging: non usa il database, quindi non consuma le sue ore. Costo circa 0,20 € al mese. Cronologia: portale Azure → `la-scacchiasd-sveglia` → **Cronologia esecuzioni**.
 - Database: va in pausa dopo 60 minuti senza uso (fisso con l'offerta gratuita). Quota di 100.000 secondi vCore al mese, circa 55 ore di database acceso; se finisce, il database si sospende fino al mese successivo. Ogni database (staging e prod) ha la sua quota.
 
 ### Accesso ai database da SSMS
